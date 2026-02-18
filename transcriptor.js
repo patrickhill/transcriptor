@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CONFIG_PATH = join(__dirname, 'config.json')
-const STATE_PATH = join(__dirname, '.state.json')
+const STATE_PATH = join(__dirname, 'state.json')
 
 // ---------------------------------------------------------------------------
 // Config & state
@@ -18,10 +18,10 @@ if (!existsSync(CONFIG_PATH)) {
 }
 
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'))
-const { fathomApiKey, claudeApiKey, outputDir } = config
+const { fathomApiKey, outputDir } = config
 
-if (!fathomApiKey || !claudeApiKey || !outputDir) {
-  console.error('config.json must include fathomApiKey, claudeApiKey, and outputDir.')
+if (!fathomApiKey || !outputDir) {
+  console.error('config.json must include fathomApiKey and outputDir.')
   process.exit(1)
 }
 
@@ -61,43 +61,6 @@ async function fetchAllMeetings() {
 async function fetchTranscript(recordingId) {
   const data = await fathomGet(`/recordings/${recordingId}/transcript`)
   return data.transcript || []
-}
-
-// ---------------------------------------------------------------------------
-// Claude API
-// ---------------------------------------------------------------------------
-
-async function cleanTranscript(transcript, title) {
-  const rawText = transcript
-    .map(item => `${item.speaker.display_name}: ${item.text}`)
-    .join('\n')
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': claudeApiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 8192,
-      messages: [
-        {
-          role: 'user',
-          content: `Clean up this meeting transcript to make it human-readable. Remove all timestamps. Group consecutive lines from the same speaker into a single paragraph. Add a blank line between different speakers. Preserve every word of the actual content — do not summarize, paraphrase, or omit anything. Output only the cleaned transcript with no preamble or commentary.
-
-Meeting: ${title}
-
-${rawText}`,
-        },
-      ],
-    }),
-  })
-
-  if (!res.ok) throw new Error(`Claude API error ${res.status}: ${await res.text()}`)
-  const data = await res.json()
-  return data.content[0].text
 }
 
 // ---------------------------------------------------------------------------
@@ -156,8 +119,9 @@ async function main() {
         continue
       }
 
-      console.log(`  Cleaning with Claude...`)
-      const cleaned = await cleanTranscript(transcript, meetingTitle)
+      const cleaned = transcript
+        .map(item => `[${item.timestamp}] ${item.speaker.display_name}: ${item.text}`)
+        .join('\n')
 
       const prefix = formatDatePrefix(dateStr)
       const fileName = `${prefix} ${sanitizeTitle(meetingTitle)}.txt`
