@@ -1,5 +1,4 @@
 {
   "fathomApiKey": "YOUR_FATHOM_API_KEY",
-  "claudeApiKey": "YOUR_CLAUDE_API_KEY",
   "outputDir": "/Users/you/Documents/Transcripts"
 }
