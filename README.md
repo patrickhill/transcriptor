@@ -1,6 +1,6 @@
 # Transcriptor
 
-A minimal Node.js CLI tool that downloads new transcripts from [Fathom](https://fathom.video/), cleans them up using Claude, and saves them as readable plaintext files.
+A minimal Node.js CLI tool that downloads new transcripts from [Fathom](https://fathom.video/) and saves them as plaintext files.
 
 No npm install required — uses only Node.js built-in APIs (requires Node 18+).
 
@@ -17,13 +17,11 @@ cp config.example.json config.json
 ```json
 {
   "fathomApiKey": "YOUR_FATHOM_API_KEY",
-  "claudeApiKey": "YOUR_CLAUDE_API_KEY",
   "outputDir": "/Users/you/Documents/Transcripts"
 }
 ```
 
 - **fathomApiKey** — found in Fathom under User Settings → API Access
-- **claudeApiKey** — found in the [Anthropic Console](https://console.anthropic.com/)
 - **outputDir** — absolute path to the folder where transcript files will be saved
 
 ## Usage
@@ -42,7 +40,7 @@ Transcripts are saved as `.txt` files named by date, time, and meeting title:
 260218-142559 team standup.txt
 ```
 
-Timestamps and machine-readable formatting are stripped by Claude, leaving a clean, readable conversation grouped by speaker.
+Each line includes the timestamp, speaker name, and what they said.
 
 ## Automation
 
