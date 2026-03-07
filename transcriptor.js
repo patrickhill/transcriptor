@@ -18,7 +18,7 @@ if (!existsSync(CONFIG_PATH)) {
 }
 
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'))
-const { fathomApiKey, outputDir, recordedBy, teams, meetingNames } = config
+const { fathomApiKey, outputDir, recordedBy, teams, meetingNames, lookbackWeeks = 3 } = config
 
 if (!fathomApiKey || !outputDir) {
   console.error('config.json must include fathomApiKey and outputDir.')
@@ -66,7 +66,8 @@ async function fetchAllMeetings() {
   const meetings = []
   let cursor = null
   let page = 1
-  const filters = []
+  const createdAfter = new Date(Date.now() - lookbackWeeks * 7 * 24 * 60 * 60 * 1000).toISOString()
+  const filters = [`since: ${createdAfter.slice(0, 10)}`]
   if (teams) {
     const t = Array.isArray(teams) ? teams : [teams]
     filters.push(`teams: ${t.join(', ')}`)
@@ -79,9 +80,10 @@ async function fetchAllMeetings() {
     const names = Array.isArray(meetingNames) ? meetingNames : [meetingNames]
     filters.push(`meeting names: ${names.join(', ')}`)
   }
-  if (filters.length) console.log(`  Filters: ${filters.join(' | ')}`)
+  console.log(`  Filters: ${filters.join(' | ')}`)
   do {
     const url = fathomUrl('/meetings')
+    url.searchParams.set('created_after', createdAfter)
     if (cursor) url.searchParams.set('cursor', cursor)
     if (teams) {
       const t = Array.isArray(teams) ? teams : [teams]
@@ -159,7 +161,6 @@ async function main() {
   }
 
   console.log(`  ${newMeetings.length} new meeting(s) to process.\n`)
-  mkdirSync(outputDir, { recursive: true })
 
   for (const meeting of newMeetings) {
     const { recording_id, title, meeting_title, recording_start_time, created_at } = meeting
@@ -184,12 +185,18 @@ async function main() {
         .map(item => `[${item.timestamp}] ${item.speaker.display_name}: ${item.text}`)
         .join('\n')
 
+      const subfolder = meetingTitle.toLowerCase().includes('ui standup')
+        ? 'UI Standup'
+        : 'Product & Engineering'
+      const subDir = join(outputDir, subfolder)
+      mkdirSync(subDir, { recursive: true })
+
       const prefix = formatDatePrefix(dateStr)
       const fileName = `${prefix} ${sanitizeTitle(meetingTitle)}.txt`
-      const filePath = join(outputDir, fileName)
+      const filePath = join(subDir, fileName)
 
       writeFileSync(filePath, cleaned, 'utf-8')
-      console.log(`  Saved: ${fileName}\n`)
+      console.log(`  Saved: ${subfolder}/${fileName}\n`)
 
       state.downloadedIds.push(recording_id)
       saveState()
