@@ -18,7 +18,7 @@ if (!existsSync(CONFIG_PATH)) {
 }
 
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'))
-const { fathomApiKey, outputDir } = config
+const { fathomApiKey, outputDir, recordedBy, teams, meetingNames } = config
 
 if (!fathomApiKey || !outputDir) {
   console.error('config.json must include fathomApiKey and outputDir.')
@@ -38,28 +38,72 @@ function saveState() {
 // Fathom API
 // ---------------------------------------------------------------------------
 
-async function fathomGet(path, params = {}) {
+async function fathomFetch(url, retries = 5) {
+  const endpoint = url.pathname.replace('/external/v1', '') + (url.search || '')
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    console.log(`  API ${attempt > 0 ? `(retry ${attempt}) ` : ''}GET ${endpoint}`)
+    const res = await fetch(url, { headers: { 'X-Api-Key': fathomApiKey } })
+    if (res.status === 429 && attempt < retries) {
+      const retryAfter = res.headers.get('retry-after')
+      const delay = retryAfter ? Number(retryAfter) * 1000 : 2000 * 2 ** attempt
+      console.log(`  Rate limited (429), retrying in ${Math.round(delay / 1000)}s...`)
+      await new Promise(r => setTimeout(r, delay))
+      continue
+    }
+    if (!res.ok) throw new Error(`Fathom API error ${res.status}: ${await res.text()}`)
+    console.log(`  OK (${res.status})`)
+    return res.json()
+  }
+}
+
+function fathomUrl(path, params = {}) {
   const url = new URL(`https://api.fathom.ai/external/v1${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const res = await fetch(url, { headers: { 'X-Api-Key': fathomApiKey } })
-  if (!res.ok) throw new Error(`Fathom API error ${res.status}: ${await res.text()}`)
-  return res.json()
+  return url
 }
 
 async function fetchAllMeetings() {
   const meetings = []
   let cursor = null
+  let page = 1
+  const filters = []
+  if (teams) {
+    const t = Array.isArray(teams) ? teams : [teams]
+    filters.push(`teams: ${t.join(', ')}`)
+  }
+  if (recordedBy) {
+    const emails = Array.isArray(recordedBy) ? recordedBy : [recordedBy]
+    filters.push(`recorded by: ${emails.join(', ')}`)
+  }
+  if (meetingNames) {
+    const names = Array.isArray(meetingNames) ? meetingNames : [meetingNames]
+    filters.push(`meeting names: ${names.join(', ')}`)
+  }
+  if (filters.length) console.log(`  Filters: ${filters.join(' | ')}`)
   do {
-    const params = cursor ? { cursor } : {}
-    const data = await fathomGet('/meetings', params)
-    meetings.push(...(data.items || []))
+    const url = fathomUrl('/meetings')
+    if (cursor) url.searchParams.set('cursor', cursor)
+    if (teams) {
+      const t = Array.isArray(teams) ? teams : [teams]
+      for (const team of t) url.searchParams.append('teams[]', team)
+    }
+    if (recordedBy) {
+      const emails = Array.isArray(recordedBy) ? recordedBy : [recordedBy]
+      for (const email of emails) url.searchParams.append('recorded_by[]', email)
+    }
+    console.log(`  Fetching meetings page ${page}...`)
+    const data = await fathomFetch(url)
+    const items = data.items || []
+    meetings.push(...items)
+    console.log(`  Got ${items.length} meeting(s) (${meetings.length} total so far)`)
     cursor = data.next_cursor
+    page++
   } while (cursor)
   return meetings
 }
 
 async function fetchTranscript(recordingId) {
-  const data = await fathomGet(`/recordings/${recordingId}/transcript`)
+  const data = await fathomFetch(fathomUrl(`/recordings/${recordingId}/transcript`))
   return data.transcript || []
 }
 
@@ -92,9 +136,22 @@ function sanitizeTitle(title) {
 async function main() {
   console.log('Fetching meetings from Fathom...')
   const meetings = await fetchAllMeetings()
-  console.log(`  ${meetings.length} total meeting(s) found.`)
+  console.log(`Found ${meetings.length} meeting(s) from API.`)
 
-  const newMeetings = meetings.filter(m => !state.downloadedIds.includes(m.recording_id))
+  let filtered = meetings
+  if (meetingNames) {
+    const names = (Array.isArray(meetingNames) ? meetingNames : [meetingNames])
+      .map(n => n.toLowerCase())
+    filtered = meetings.filter(m => {
+      const title = (m.meeting_title || m.title || '').toLowerCase()
+      return names.some(n => title.includes(n))
+    })
+    console.log(`  ${filtered.length} match meeting name filter, ${meetings.length - filtered.length} skipped.`)
+  }
+
+  console.log(`${state.downloadedIds.length} previously downloaded.`)
+
+  const newMeetings = filtered.filter(m => !state.downloadedIds.includes(m.recording_id))
 
   if (newMeetings.length === 0) {
     console.log('No new transcripts to download.')
@@ -109,15 +166,19 @@ async function main() {
     const meetingTitle = meeting_title || title || 'untitled'
     const dateStr = recording_start_time || created_at
 
-    console.log(`Processing: ${meetingTitle}`)
+    const idx = newMeetings.indexOf(meeting) + 1
+    console.log(`[${idx}/${newMeetings.length}] ${meetingTitle} (${dateStr || 'no date'})`)
 
     try {
+      console.log(`  Fetching transcript for recording ${recording_id}...`)
       const transcript = await fetchTranscript(recording_id)
 
       if (transcript.length === 0) {
         console.log('  No transcript available, skipping.\n')
         continue
       }
+
+      console.log(`  Got ${transcript.length} transcript line(s)`)
 
       const cleaned = transcript
         .map(item => `[${item.timestamp}] ${item.speaker.display_name}: ${item.text}`)

@@ -17,12 +17,18 @@ cp config.example.json config.json
 ```json
 {
   "fathomApiKey": "YOUR_FATHOM_API_KEY",
-  "outputDir": "/Users/you/Documents/Transcripts"
+  "outputDir": "/Users/you/Documents/Transcripts",
+  "teams": "Product & Engineering",
+  "meetingNames": "UI Standup",
+  "recordedBy": "you@example.com"
 }
 ```
 
 - **fathomApiKey** — found in Fathom under User Settings → API Access
 - **outputDir** — absolute path to the folder where transcript files will be saved
+- **teams** *(optional)* — filter by Fathom team name. String or array of strings
+- **meetingNames** *(optional)* — only download meetings whose title contains this text (case-insensitive). String or array of strings
+- **recordedBy** *(optional)* — filter to meetings recorded by specific email(s). String or array of strings. Note: Fathom deduplicates recordings when multiple team members are on a call, so filtering by team + meeting name is often more reliable than filtering by recorder
 
 ## Usage
 
@@ -30,7 +36,7 @@ cp config.example.json config.json
 node transcriptor.js
 ```
 
-On each run, the tool checks which meetings have already been downloaded (tracked in `.state.json`) and only processes new ones.
+On each run, the tool checks which meetings have already been downloaded (tracked in `state.json`) and only processes new ones.
 
 ## Output
 

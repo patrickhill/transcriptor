@@ -1,4 +1,7 @@
 {
   "fathomApiKey": "YOUR_FATHOM_API_KEY",
-  "outputDir": "/Users/you/Documents/Transcripts"
+  "outputDir": "/Users/you/Documents/Transcripts",
+  "recordedBy": "you@example.com",
+  "teams": "Product & Engineering",
+  "meetingNames": "UI Standup"
 }
